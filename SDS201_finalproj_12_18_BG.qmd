@@ -1,0 +1,270 @@
+---
+title: "SDS 201 Final Project"
+author: "Rachael An, Samantha Murabito, Brenda Gutierrez, Dana Lesko"
+format: 
+  pdf:
+    self-contained: true
+---
+# Introduction
+
+Since their introduction to the US market in 1962, Legos have been a popular gift and creative outlet for many children. Lego takes a different approach to children’s toys, as they offer children an opportunity to think creatively and assemble their gift rather than being gifted a toy that is ready-made. The process of building Legos can be a challenging activity that keeps children engaged for long periods of time. In addition to being unique within the toy market, Lego offers thousands of sets with a variety of themes in an attempt to reach a more diverse audience. 
+   
+These sets can range in price anywhere from tens of dollars to hundreds, so as a consumer, it’s important to know that you’re getting a good deal while also receiving a good product. According to a statement from LEGO, they determine their prices based on a variety of factors such as the number of new and unique molds required to create the pieces in the set in addition to the cost of licensing characters from other companies and brands[^1]. Knowing this and knowing that LEGO has many different franchises for many different target demographics, how can we make sure that consumers are getting the most out of their money?
+
+Our project investigates how prices of LEGO sets relate to the number of pieces in the set and its theme. We were interested in investigating this question to gain a better understanding of where consumers’ money is going, and which specific franchises within Lego are best for price/piece ratio. Our process for addressing this question began with downloading the data, which we obtained from a scraped data set (from Brickset and BrickInstructions.com)[^2] that had previously been merged using R. The dataset includes many variables describing LEGO building brick sets, containing those produced between January 1, 2018 and September 11, 2020. 
+
+Some of the variables included are the set name, the year it was published, its theme, the age range it's meant for, the pieces count, and more. We limited these variables by focusing directly on the theme of the set, total number of pieces in the set, and the price of the set. There were 41 different themes included in the dataset, so we decided to limit our research to the five themes that had the most amount of sets within the data. From here, we decided to focus more specifically on the LEGO Star Wars and LEGO City sets by using a hypothesis test on the difference of their mean prices and a hypothesis test on the relationship between the amount of pieces and price, as quantified by their regression coefficients
+
+[^1]: “How We Decide the Prices of LEGO® Sets.” Customer Service - LEGO.com US, https://perma.cc/R2U8-CGJL. 
+
+[^2]: Peterson, Anna D., and Laura Ziegler. “Building a Multiple Linear Regression Model with Lego Brick Data.” Journal of Statistics and Data Science Education, vol. 29, no. 3, 2021, pp. 297–303., https://doi.org/10.1080/26939169.2021.1946450. 
+
+# Exploratory data analysis 
+```{r, echo=FALSE, message=FALSE}
+library(ggplot2)
+library(moderndive)
+library(tidyverse)
+library(infer)
+library(dplyr)
+library(knitr)
+
+lego_sets <- read.csv("http://wjhopper.github.io/SDS-201/data/legos.csv")
+```
+To narrow down this large data set, we decided to select a few set themes to analyze. We chose LEGO Star Wars, LEGO Friends, LEGO City, LEGO NINJAGO, and LEGO Duplo, as these were the five themes that had the highest number of LEGO sets in the data according to Table 1. After filtering for these selected themes, we ended up analyzing 454 LEGO sets out of the 1304 that were in the original data set.
+```{r, echo=FALSE, message=FALSE}
+#| label: tbl-set_count
+#| tbl-cap: "Total counts of each LEGO set by theme."
+
+count_by_theme <- lego_sets |>
+  filter(!is.na(Theme)) |>
+  group_by(Theme) |>
+  summarize(count = n()) |>
+  arrange(desc(count)) |>
+  head() |>
+  kable()
+count_by_theme
+```
+To find the connection between price and theme, we created a table that divides up the sets by theme and finding each themes' mean, median, standard deviation, and total number of sets. 
+
+```{r, echo=FALSE, message=FALSE}
+lego_themes <- lego_sets |>
+  filter(Theme == "Star Wars" | Theme == "Friends" | Theme == "City" | Theme ==  "NINJAGO" | Theme == "DUPLO")
+```
+
+```{r, echo=FALSE, message=FALSE}
+#| label: tbl-themes_summary
+#| tbl-cap: "Summary statistics of all LEGO sets by theme."
+stats_by_theme <- 
+  lego_themes %>%
+  group_by(Theme) %>%
+  summarize(mean = mean(Price, na.rm = TRUE),
+            median = median(Price, na.rm = TRUE), 
+            sd = sd(Price, na.rm = TRUE),
+            n = n())|>
+  head() |>
+  kable(digits = 2)
+stats_by_theme
+```
+
+According to Table 2, Star Wars has the most expensive average and median price ($\bar{x}$ = 60.63, median = 29.99), while Friends has the cheapest average and median price ($\bar{x}$ = 30.06, median = 19.99), following DUPLO closely in average price ($\bar{x}$ = 30.59). City (and Star Wars) have the most expensive median price (median = 29.99) and DUPLO and NINJAGO (and Friends) have the cheapest median price (median = 19.99).
+
+After selecting our five different themes to analyze, we created boxplots to show the distributions of the price amongst these five different LEGO themes. Among the LEGO Star Wars sets, the set “Imperial Star Destroyer” with a cost of \$699.99 and the set “Betrayal at Cloud City” with a cost of \$349.99 were outliers amongst the rest of the themes, so we limited our Price variable on the Y axis to \$300. From this, we could see that LEGO City and LEGO Star Wars sets have a higher median price than the other themes. LEGO City and LEGO Star Wars also have higher variance in terms of price with larger box shapes and longer boxplot whiskers. 
+
+```{r, echo=FALSE, warning = FALSE, message = FALSE}
+#| label: fig-price-theme-boxplot
+#| fig-cap: "Boxplot displays the distribution of the price of Lego sets, divided by theme."
+# Boxplot measuring the amount of lego sets with a certain price based on their theme
+
+ggplot(data = lego_themes, mapping = aes(x = Theme, y = Price, fill = Theme)) +
+  geom_boxplot() + ylim(0,300)
+```
+
+Next, we wanted to measure the frequency of LEGO sets with a certain number of pieces. We did this by creating a histogram with the Pieces variable on the X axis. This histogram has a positive skew and we can see that most of the LEGO sets in our data have less than 250 pieces. The histogram has high variability since the distribution flattens out as the number of pieces increases, displaying large peaks in sets with less than 250 pieces but then petering out after that.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: fig-pieces-histogram
+#| fig-cap: "Histogram illustrates the frequency of Lego sets with a certain amount of pieces."
+
+ggplot(data = lego_themes, mapping = aes(x = Pieces))+
+  geom_histogram(color = "white") + xlim(0, 1500)
+```
+
+We then looked at the price variable and the number of LEGO sets that fall under each price point. We decided to limit our price variable to \$300 again to keep our distributions consistent, so we had two outlier sets, which were the “Imperial Star Destroyer” which cost \$699 and the set “Betrayal at Cloud City” with a cost of \$349.99. Similar to our previous Pieces/Count distribution, there is a positive skew to the distribution.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: fig-price-histogram
+#| fig-cap: "Histogram shows the frequency of Lego sets with a certain price."
+# One outlier that has a price >$600
+
+ggplot(data = lego_themes, mapping = aes(x = Price))+
+  geom_histogram() + xlim(0, 300)
+```
+
+Next, we created a scatter plot to look at the relationship between the number of pieces (X axis) and the price (Y axis) while sorting by theme. Each dot color represents a new theme and we used the geom_smooth function to give each Theme its own slope. To keep things consistent with the last few visualizations, we limited our pieces function to 4000 pieces and limited our price function to \$300. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: fig-pieces-price-scatterplot
+#| fig-cap: "Scatterplot illustrates the price of each Lego sets, with the lines of best fit describing the relationship of the amount of pieces and the price for the Lego sets of each theme." 
+# One outlier that has >4000 pieces and is >$600
+
+pieces_vs_price_by_theme <-
+  ggplot(data = lego_themes, mapping = aes(x = Pieces, y = Price, color = Theme)) +
+  geom_point() + xlim(0, 4000) + ylim(0, 300) +
+  geom_smooth(method=lm, se=FALSE)
+pieces_vs_price_by_theme
+```
+
+From here, we can see that there is a positive relationship between Pieces and Price regardless of the LEGO set theme. While DUPLO sets have the steepest slope, they also have the smallest range in price and number of pieces. Star Wars, on the other hand, has the widest range of both price and number of pieces in their LEGO sets. 
+
+ 
+# Modeling Analysis
+
+First, we wanted to test if there was in fact a relationship between the number of pieces and the price, as explored with the scatter plot. To do this, we created a linear regression table in order to perform a hypothesis test based on the regression coefficient. In this hypothesis test, our null hypothesis is that the slope would be equal to zero, meaning that there is no evidence to conclude that there is a relationship between the two variables:
+
+$$
+H_0 : \beta = 0
+$$
+Meanwhile, our two-sided alternative hypothesis states that the slope is not zero, which would indicate some sort of relationship between the number of pieces and price:
+
+$$
+H_A : \beta \ne 0
+$$
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#Regression table of pieces and price 
+# Fit regression model:
+score_model <- lm(Price ~ Pieces, data = lego_themes)
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: tbl-reg_tbl
+#| tbl-cap: "Regression table of the bivariate linear regression slopes model of average price as a function of number of pieces in the LEGO sets."
+# Get regression table:
+get_regression_table(score_model) |>
+  kable(digits = 2)
+
+```
+
+Using permutation, we created a null distribution of the slope, which represents the relationship between the number of pieces and price. 
+
+```{r, echo = FALSE, warning = FALSE}
+set.seed(927)
+permutation_distribution <- lego_themes |>
+  specify(Price ~ Pieces) |>
+  hypothesise(null = "independence") |>
+  generate(reps = 1000, type="permute") |>
+  calculate(stat = "slope")
+```
+
+The figure below displays the null distribution with the p-value, or the region of values that are as extreme or more extreme than the observed slope (0.11). 
+
+```{r, echo = FALSE, warning = FALSE}
+#| label: fig-reg-p_val
+#| fig-cap: "The red portion displays the probability of observing a slope as extreme or more extreme than the observed slope, assuming the null hypothesis is true."
+null_distribution <- 
+  visualize(permutation_distribution) + 
+  shade_p_value(obs_stat = 0.107, direction = "both")
+null_distribution
+
+permutation_distribution %>%
+  get_p_value(obs_stat = 0.107, direction = "both")
+```
+
+We set the significance level, or alpha level, to 0.05, representing the 5% most extreme values. Since the p-value of 0 is less than the alpha level of 0.05, we reject the null hypothesis and conclude that there is a relationship between the number of pieces and price of a LEGO set. 
+
+
+```{r, echo = FALSE, warning = FALSE}
+#Linearity and equal variance test
+# line_test <- get_regression_points(score_model)
+# 
+# ggplot(line_test, aes(x=Price_hat, y=residual)) +
+#   geom_point() +
+#   geom_hline(yintercept = 0, color="blue")
+```
+The linearity assumption does not appear to be violated since there is not a clear relationship between the predicted Price values from the regrssion model and the residuals. There does appear to be a weak equal variance violation because the vertical spread of the residuals changes a bit as you move left to right on the plot. 
+
+```{r, echo = FALSE, warning = FALSE}
+#Normality assumption
+# ggplot(line_test, aes(x=residual)) +
+#   geom_histogram(bins = 20)
+```
+There is no violation of normality since the distribution of the residuals appears to be bell-shaped and thus follows a Normal distribution. In addition, there is no evidence of a violation of the independence assumption since the data was collected in such a way that there is no link between one LEGO set and another. No LEGO set was measured twice for any reason. Thus, there is evidence to show that there is a dependence between residual errors.
+
+Since the L.I.N.E assumptions have not been significantly violated, we are confident that we can use the regression model to draw inferences about the regression coefficients. 
+
+
+We decided to also run a hypothesis test on the mean cost of LEGO Star Wars sets versus the mean cost of LEGO City sets, since we found in the exploratory data analysis that these sets had the most variance in price. Our null hypothesis was that there is no difference in the average price of LEGO Star Wars sets and the average price of LEGO City sets, while our alternative hypothesis was that there is a difference in the average price of LEGO Star Wars sets and the average price of LEGO City sets. To find our test statistic, we created a chart of the average price of each LEGO theme. As illustrated in Table 4, LEGO Star Wars sets have an average cost of \$60.60 while LEGO City sets have an average cost of \$44.90. The difference in means between the two is \$15.70.
+
+The null hypothesis is as follows: 
+$$
+H_0 : \mu_{Star Wars} - \mu_{City} = 0
+$$
+
+The alternative hypothesis is as follows: 
+$$
+H_A : \mu_{Star Wars} - \mu_{NINJAGO} \ne 0
+$$
+
+```{r, echo = FALSE, warning = FALSE}
+#| label: tbl-average_prices
+#| tbl-cap: "Table details the average prices of the sets within each LEGO theme."
+lego_themes |>
+  group_by(Theme) |>
+    summarize(avg_price = mean(Price, na.rm = TRUE)) |>
+  kable()
+```
+
+
+```{r, echo = FALSE, warning = FALSE}
+diff_means = 60.6 - 44.9
+#diff_means
+```
+
+Next, we used permutation to create a null distribution of the difference in mean costs of these two themes. The null distribution is displayed in Figure 4. 
+
+```{r, echo = FALSE, warning = FALSE}
+lego_main_themes <- lego_themes|>
+  filter(Theme == "Star Wars" | Theme == "City")
+```
+
+```{r, echo = FALSE, warning = FALSE}
+# Null distribution of the difference of means 
+set.seed(748)
+permutation_dist <- lego_main_themes |>
+  specify(formula = Price ~ Theme) |>
+  hypothesise(null = "independence") |>
+  generate(reps = 1000, type = "permute") |>
+  calculate(stat = "diff in means", order = c("Star Wars", "City"))
+```
+
+```{r, echo = FALSE, warning = FALSE}
+#| label: fig-diff_means_null
+#| fig-cap: "Null distribution displays what the difference in means of the price between the Star Wars and City Lego sets in a world where the price and theme have no effect on one another, according to the null hypothesis."
+
+visualise(permutation_dist)
+```
+
+On the null distribution, we shaded the p-value, which represents values as extreme or more extreme than the observed difference in means (\$15.7) between Star Wars and City themes. 
+
+
+```{r, echo = FALSE, warning = FALSE}
+#| label: fig-permutation-p_val
+#| fig-cap: "The red portion displays the probability of observing a difference of means as extreme as 0.126, assuming the null hypothesis is true."
+permutation_dist |>
+  get_p_value(obs_stat = diff_means, direction = "both")
+
+visualise(permutation_dist) +
+  shade_p_value(obs_stat = diff_means, direction = "both")
+```
+
+We set the alpha value to 0.05 and shaded it on a separate distribution. Alpha is the risk of running a Type I error which means there is a 5% chance that we conclude there is a difference in mean costs between Star Wars and City sets when there actually is not. It is also the significance level, meaning it's 5% of the most extreme values. Since our p-value is 0.013 and larger than our alpha value of 0.05, we must fail to reject our null hypothesis, meaning that we found no evidence that these two particular LEGO themes were associated with their mean price. 
+
+
+# Conclusion
+
+For our analysis, we limited our research to the five themes with the highest number of LEGO sets (Star Wars, City, Duplo, Friends, NINJAGO) to save time, but if we had more resources, we could have conducted null hypothesis tests and analyzed the regression table for every theme to get the most accurate results. We performed multiple tests to answer our research question: What is the relationship between the price of LEGO sets versus number of pieces and theme? 
+
+First, the hypothesis test comparing the differences in means between Star Wars and City sets answers whether there is a relationship between price and theme. According to our results, we found no evidence that the mean prices of Star Wars and City themed sets are not different. While this may be true for these themes, we did not run this experiment comparing the average prices of the other themes we looked at. If we had compared LEGO NINJAGO and LEGO Friends sets’ average prices for example, we may have gotten completely different results entirely.
+
+This is also seen in the box plot of themes vs. price, as all of the themes had similar means. Next, the regression table answers whether there is a relationship between pieces and price. The null hypothesis failed to be rejected for the Star Wars theme, which means that we found no evidence to conclude that the pieces variable is associated with the price variable for the Star Wars theme. However, for the City theme, there is sufficient evidence to reject the null hypothesis, which means that we found a adequate relationship between the pieces and price variables. Knowing that the relationship between piece and price may vary depending on the specific theme of LEGO set that you buy, consumers can shop smart and purchase the LEGO themes with the best price to piece ratio.  
